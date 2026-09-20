@@ -1,0 +1,32 @@
+{
+  "experimentId": "EXP_047_BTCUSDT_MICROSTRUCTURE_001",
+  "hypothesisId": "HYPOTHESIS_009",
+  "verdict": "VETO",
+  "reasonCode": "WILSON_CI_LOWER_BOUND_BELOW_BREAK_EVEN",
+  "metrics": {
+    "sampleSize": 339,
+    "empiricalWinRate": 0.5575221238938053,
+    "wilsonLowerBound": 0.5042987753608352,
+    "wilsonUpperBound": 0.6094564283830533,
+    "breakevenHurdle": 0.5405405405405405,
+    "expectedValue": 0.03141592920353975,
+    "alphaOverBaseline": 0.06043969958338173,
+    "alphaOverReversed": 0.1150442477876106,
+    "ciHalfWidth": 0.05257882651110906,
+    "directionalImbalance": 0.03031358885017421
+  },
+  "monthlyBreakdown": {
+    "2024-07": { "n": 57, "wins": 31, "losses": 26, "winRate": 0.5439 },
+    "2024-08": { "n": 95, "wins": 60, "losses": 34, "winRate": 0.6383 },
+    "2024-09": { "n": 62, "wins": 35, "losses": 27, "winRate": 0.5645 },
+    "2024-10": { "n": 54, "wins": 29, "losses": 25, "winRate": 0.5370 },
+    "2024-11": { "n": 72, "wins": 34, "losses": 38, "winRate": 0.4722 }
+  },
+  "triProofAudit": {
+    "proof1_stats": "FAIL_CI_LOWER_BOUND",
+    "proof2_adversarial": "PASS",
+    "proof3_provenance": "PASS"
+  },
+  "status": "FALSIFIED_FOR_UNCONDITIONED_PRODUCTION_ARCHIVED",
+  "croSignature": "CRO_SOVEREIGN_VERIFIED_2026-09-17T00:04:00Z"
+}

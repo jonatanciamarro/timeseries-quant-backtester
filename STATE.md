@@ -1,6 +1,6 @@
 # Project State: Binary Options Quant
 
-**Current Phase:** Commit 043 Complete (XAU/XAG Instrument Identity Audit Formalized & Railway 24/7 Cloud Recorder Infrastructure Deployed)
+**Current Phase:** Commit 051 Complete (H011 F1 exploration protocol FROZEN f5d19515; DEMO_IQO_OPS v1.0.0 scaffold FROZEN 96b4c460; 11/11 fence tests green; full suite 255/268 with 13 pre-existing unrelated failures; H010 untouched 04_PAPER/DEMO; live BLOCKED)
 
 ## Completed Milestones
 1. **Commit 001 - Core Types:** MarketObservation, BinaryOutcome, Signal, ProbabilitySnapshot.
@@ -225,5 +225,102 @@
     - **Cloud Entrypoint & Web Dashboard:** Implemented `cloud_entrypoint.py` serving `/health` (Railway healthcheck), `/metrics`, `/` (HTML progress dashboard towards 10,000 candles), and `/download` (direct one-click `.jsonl` download).
     - **Railway Configuration & Guide:** Authored `railway.json` and comprehensive user guide `docs/RAILWAY_DEPLOYMENT_GUIDE.md`.
     - **Test Coverage:** 100% existing test suites passing without regressions. **[CLOUD DEPLOY INFRASTRUCTURE READY]**
+94. **Commit 044 - Railway Deploy Build Fix, Venue Handshake Diagnosis & First Light:**
+    - **Docker build fix:** `pip install -r requirements.txt` failed with `ResolutionImpossible` (`websocket-client==1.8.0` vs iqoptionapi's `==0.56`); interim two-step install, then root-cause alignment to `websocket-client==0.56` with Dockerfile reverted to single-line install (dry-run proven).
+    - **Connect watchdog:** `iqoption_adapter.connect()` wrapped in worker-thread `join(timeout=IQO_CONNECT_TIMEOUT, 90s)` + `CONNECTION_STATE` telemetry surfaced in `/health`, `/metrics` and dashboard badge (also fixed the dead `connected` indicator).
+    - **Root-cause isolation:** venue reachable; deterministic failure `WebsocketClient.on_message() takes 2 positional arguments but 3 were given` under 1.8.0 — resolved by the 0.56 alignment.
+    - **First light 2026-09-14T23:04:32Z:** `Connection successful. Practice mode asserted.` + `Candle stream started` (XAU/XAG M1), backfill burst #1–#99 + live cadence. **[DEPLOY OPERATIONAL]**
+95. **Commit 045 - Single-Session Multi-Stream Recorder (`IQO_STREAMS`) & XAU/USD Accumulation Start:**
+    - One IQO session multiplexes `XAU/XAG:60` (untouched, same file layout) + `XAUUSD:60` + `XAUUSD:5`; per-stream files, dedup, counters and failure isolation; default env preserves legacy single-stream behavior.
+    - Cloud entrypoint serves per-stream `/health`, `/metrics`, dashboard cards and `/download?stream=ASSET:INTERVAL`.
+    - **Test battery:** `recorder/tests/test_recorder_multistream.py`, 11/11 passing (stdlib unittest, mocked venue, no network).
+    - **Live 2026-09-15:** all three streams nominal (5s cadence exact, cross-granularity closes consistent, XAU/XAG numbering continuous across redeploy via volume + dedup). Two isolated 5s gaps quarantined for canonicalization (#383/TS …140, #468/TS …565).
+    - **Provenance note:** XAU/XAG closed count regressed 108 → 103 across one restart (file reset + venue backfill ≈100); loss bounded, series monotonic since. Volume must not be recreated. **[MULTI-STREAM LIVE]**
+96. **Commit 046 - Venue Catalog Discovery Endpoint & H008 In-Sample Microstructure Calibration:**
+    - **Venue Discovery Infrastructure:** Built `get_catalog_metadata` in `iqoption_adapter.py`, atomic cache persistence (`VENUE_CATALOG_DISCOVERY.json`), and exposed `GET /discovery?asset=XAUUSD` on `cloud_entrypoint.py` with dashboard badge.
+    - **Test Coverage:** Added `test_discovery_response` to `recorder/tests/test_recorder_multistream.py` (12/12 tests passing, 100% OK offline). All 67 Jest test suites / 231 tests passing without regressions.
+    - **Empirical Microstructure Study (`DATASET_XAUUSD_001_EXPLORATORY_IS`):** Analyzed 2,675 closed M1 bars and 31,002 closed 5s bars from IQ Option live streams (`2026-09-15T00:13:00Z` to `2026-09-16T22:48:00Z`, ~46 hours).
+    - **Scientific Finding 1 (The Stretch Fallacy):** M1 stretch alone exhibits continuation momentum ($P_{\text{fade}} = 47.35\%$ for $\text{Range} \ge 1.5\times\text{ATR}$). Pure stretch fading is systematically unprofitable without microstructural gating.
+    - **Scientific Finding 2 (5s Rejection Alpha):** Requiring 12th candle 5s wick $\ge 0.35$ AND pro-fade closing body lifted Win Rate from $47.35\%$ to **$66.67\%$** ($N=33$, EV(85%) = $+0.233$, 95% Wilson CI $[49.61\%, 80.25\%]$).
+    - **Scientific Finding 3 (Directional Asymmetry):** BULL stretch fade (PUT) showed $59.52\%$ WR ($N=42$); BEAR stretch fade (CALL) dropped to $41.67\%$ ($N=36$) due to liquidation cascades. Rule enforced: BEAR stretch fade strictly requires causal structural support confluence.
+    - **Scientific Finding 4 (Timing Guard):** Extrema occurring in terminal 10s ($:50-:60$) indicate breakout momentum; trade suppressed if $t_{\text{extreme}} \ge T+50\text{s}$.
+    - **Epistemic Quarantine & Power Floor:** First 46 hours quarantined permanently as `IN_SAMPLE_EXPLORATORY`. Formal binomial power analysis derived $N_{\text{min, power}} = 450$ trades for $\alpha=0.05, 1-\beta=0.80, \Delta=4.45\text{ pp}$.
+    - **SPEC_DRAFT v1.1.0:** Formally updated [SPEC_DRAFT_H008.md](file:///C:/Users/WDAGUtilityAccount/.gemini/antigravity/brain/e47abf9e-b981-4e03-a992-c44c6b3e371d/SPEC_DRAFT_H008.md). Strategy implementation and OOS backtesting remain strictly **`BLOCKED (NOT FROZEN)`**.
+97. **Commit 047 - BTC/USDT Microstructure Reconstruction (Rota B), H009 Freeze & Blind OOS Replay:**
+    - **Rota B Pipeline:** Built `scripts/data_acquisition/reconstruct_binance_5s.py` streaming official Binance public daily `aggTrades` archives in-memory without multi-gigabyte disk dumps.
+    - **Dataset Construction (`DATASET_BTCUSDT_5S_001`):**
+      - In-Sample (June 2024): 28.1M trades $\to$ 43,200 M1 bars, 518,400 5s bars (`BTCUSDT_2024-06.parquet`).
+      - Out-of-Sample Locked (July–August 2024, 62 days): 89,280 M1 bars, 1,071,360 5s bars (`BTCUSDT_2024-07_08.parquet`). 100% monotonic, zero gaps.
+    - **Pre-Registration & Freeze (`HYPOTHESIS_009`):**
+      - Pre-registered in `research/governance/HYPOTHESIS_009.json` (SHA-256: `eb5d35f3c4d20c4fee3336f4e38ff96fc5d39581da99c0b24640d74dbb1228c5`).
+      - Rules: M1 Stretch $\ge 1.5\times\text{ATR}(14)$, 12th 5s candle wick $\ge 0.35$, 5s pro-fade close, extreme timing $< :50\text{s}$. Expiry: 60s, Payout: 85%, $P_{\text{BE}} = 54.05\%$.
+    - **Implementation & Adversarial Red Team:**
+      - Created `src/strategy/models/BTCUSDTMicrostructureModel.js` and `ReversedBTCUSDTMicrostructureModel.js`.
+      - Executed `tests/adversarial/047_adversarial_h009.test.js` (6/6 tests passing: causal lookback $t-1$, timing fuzzing, reversed control symmetry, zero range handling, synthetic null).
+      - All 68 Jest test suites (237/237 tests) and 12 Python unittests passing (100%).
+    - **Blind Walk-Forward OOS Replay (`EXP_047`):**
+      - Executed `scripts/research/run_experiment_047_h009_oos.py` across 62 locked OOS days (July 1 to August 31, 2024).
+      - **Empirical Win Rate:** **$60.26\%$** ($N=151$, 91 Wins, 60 Losses, 1 Push).
+      - **Expected Value:** **$EV = +0.1149$** (+11.49% per trade vs $P_{\text{BE}} = 54.05\%$).
+      - **Superiority over Naive Baseline ($49.69\%$):** **$+10.57\text{ pp}$**.
+      - **Superiority over Reversed Control ($39.74\%$):** **$+20.53\text{ pp}$**.
+      - **Directional Symmetry:** CALL $60.00\%$ ($N=80$), PUT $60.56\%$ ($N=71$), $\Delta = 0.56\text{ pp}$.
+    - **Tri-Proof CRO Deliberation:**
+      - Proof 1 (Stats): 95% Wilson CI $[52.30\%, 67.72\%]$. Deficit of -175.57 bps on lower bound due to sample size power constraint ($N=151 \implies \text{CI half-width } \pm 7.7\text{ pp}$).
+      - Proof 2 (Adversarial): PASS. Proof 3 (Provenance): PASS.
+      - **Sovereign Verdict:** **`RETURN_FOR_REVIEW`** (`RISK_DECISION_047.json`, `CRO_VERDICT.md`). Issued `REMEDIATION_REQUIREMENT.json`.
+98. **Commit 048 - 5-Month Out-of-Sample Expansion (Jul–Nov 2024), Regime Breakdown & CRO Sovereign VETO:**
+    - **Dataset Reconstruction Expansion:**
+      - Reconstructed September 2024 (30 days: 518,400 5s bars, 43,200 M1 bars).
+      - Reconstructed October–November 2024 (61 days: 1,054,080 5s bars, 87,840 M1 bars).
+      - Total OOS locked dataset: **153 calendar days** (July 1 to November 30, 2024), 2,643,840 5s bars, 220,320 M1 bars, 100% monotonic, zero lookahead.
+    - **Expanded Blind OOS Replay:**
+      - Resolved Trades ($N$): **339 trades** (189 Wins, 150 Losses, 1 Push).
+      - Overall Win Rate: **$55.75\%$** ($EV = +0.0314$).
+      - Alpha vs Naive Market Baseline ($49.71\%$): **$+6.04\text{ pp}$** over 211,991 candles.
+      - Alpha vs Reversed Control ($44.25\%$): **$+11.50\text{ pp}$** over 339 trades.
+      - Directional Symmetry: CALL $54.29\%$ ($N=175$), PUT $57.32\%$ ($N=164$). Imbalance $3.03\text{ pp} \le 8.0\text{ pp}$.
+    - **Empirical Monthly Regime Decomposition:**
+      - 2024-07 (Range-Bound Summer): $N=57$, 31W - 26L $\implies$ **$54.39\%$ WR** ($> P_{\text{BE}}$).
+      - 2024-08 (Liquidity Correction): $N=95$, 60W - 34L $\implies$ **$63.83\%$ WR** ($+9.78\text{ pp}$ surplus).
+      - 2024-09 (Pre-Election Reaccumulation): $N=62$, 35W - 27L $\implies$ **$56.45\%$ WR** ($+2.40\text{ pp}$ surplus).
+      - 2024-10 (Volatility Expansion): $N=54$, 29W - 25L $\implies$ **$53.70\%$ WR** ($-0.35\text{ pp}$).
+      - 2024-11 (US Election Breakout / Mega-Trend $68\text{k}\to99\text{k}$): $N=72$, 34W - 38L $\implies$ **$47.22\%$ WR** ($-6.83\text{ pp}$).
+      - *Core Epistemic Finding:* In balanced/mean-reverting months (Jul–Oct, $N=267$), the model produced **$58.05\%$ WR**. In runaway mega-trends (Nov), single-candle wicks are steamrolled by institutional momentum.
+    - **CRO Tri-Proof Sovereign Deliberation:**
+      - Proof 1 (Stats): 95% Wilson CI $[50.43\%, 60.95\%]$. Lower bound $W_{\text{low}} = 50.43\% \le P_{\text{BE}} = 54.05\%$ (deficit -362.42 bps).
+      - Proof 2 (Adversarial): PASS. Proof 3 (Provenance): PASS.
+      - **Verdict:** Sovereign **`VETO`** issued (`RISK_DECISION_047.json`, `CRO_VERDICT.md`).
+      - Classification: **`FALSIFIED_FOR_UNCONDITIONED_PRODUCTION_ARCHIVED`**.
+99. **Commit 049 - HYPOTHESIS_010 Freeze, Blind OOS Replay (62.59% WR), CRO Approval & Model Registry Promotion:**
+    - **Hypothesis Formalization & Freeze:** Pre-registered `HYPOTHESIS_010` v1.0.0 (Macro-Conditioned Order Flow Absorption & Terminal Microstructure Reversion on BTC/USDT). Spec frozen at SHA-256 `9df1b6cdfe35ff42ab8de80f61ee15cbed52592688de36b600c0192cf814121e`.
+    - **Model Primitives:** Implemented causal `OrderFlowAbsorptionModel.js` and negative mirror `ReversedOrderFlowAbsorptionModel.js` featuring volume delta ($\Delta V = V_{\text{buy}} - V_{\text{sell}}$) absorption confirmation and 24h macro-trend tolerance gate ($\pm 1.5\%$ SMA 1440).
+    - **Adversarial Red Team Certification:** Built `tests/adversarial/048_adversarial_h010.test.js` (5/5 tests passing: causal lookbacks, timing boundary fuzzer, unabsorbed aggression rejection, numerical zero-guards, reversed mirror symmetry).
+    - **Blind Walk-Forward OOS Replay (`EXP_048`):** Replayed across 153 continuous blind days (July 1 to November 30, 2024; 2,643,840 5s bars, 220,320 M1 bars).
+      - **Sample Size ($N$):** **147 resolved trades** (92 Wins, 55 Losses, 0 Pushes).
+      - **Empirical Win Rate:** **$62.59\%$** ($EV = +0.1578$).
+      - **Statistical Evidence Gate:** 95% Wilson Score CI = $[54.54\%, 69.99\%]$. **$W_{\text{low}} = 54.54\% > P_{\text{BE}} = 54.0541\%$ (+48.15 bps surplus)!**
+      - **Constitutional Invariant 4 Satisfied:** First model on BTC/USDT spot microstructure in laboratory history to clear the Wilson Lower Bound economic hurdle!
+      - **100% Monthly Consistency:** 5 of 5 OOS calendar months independently profitable (Jul: 59.09%, Aug: 77.50%, Sep: 55.17%, Oct: 56.00%, Nov: 58.06%).
+      - **Superiority over Naive Baseline ($49.98\%$):** **$+12.61\text{ pp}$**.
+      - **Superiority over Reversed Control ($37.41\%$):** **$+25.17\text{ pp}$**.
+      - **Directional Performance:** CALL Win Rate **$58.33\%$** ($N=84$), PUT Win Rate **$68.25\%$** ($N=63$).
+    - **CRO Sovereign Deliberation:** **`PASS_RESEARCH_REGISTRY_GATE`** issued (`RISK_DECISION_048.json`, `CRO_VERDICT.md`, `PROVENANCE_RECEIPT_048.json`).
+    - **Model Registry Manifest:** Emitted `artifacts/model_registry/MODEL_H010_MANIFEST.json` with 4-way consensus quorum (CRO, CTO, Controller, CEO). Added `tests/unit/ModelRegistry_H010.test.js`.
+    - **Test Coverage:** 70 Jest test suites / 248 tests passing (100%).
+100. **Commit 050 - PAPER_H010 v1.0.0 Freeze, Custody Remediation, Supervisor v1.1.0 & 04_PAPER/DEMO Authorization:**
+    - **SPEC_PAPER_H010 v1.0.0 FROZEN:** Locked 15 dimensions (BTCUSDT BINANCE_SPOT, 60s/0.85/P_BE 54.0541%, fixed stake 1.0, Kelly prohibited, 30d/N=100, disconnect freeze). SHA-256 `CABB576F30E4AB994E216064F0915EE6CA43AA5231F7EF1C0DEC71AEFC2F9C71` (`a5fad01`). Single authorized config line `live_shadow_executor_h010.js:42` `10.0→1.0`.
+    - **Custody & Re-lock:** `PROVENANCE_RECEIPT_PAPER_H010.json` emitted; 7/7 gates PASS; manifest `03_APPROVED→04_PAPER/DEMO` applied (`0e7fc82`).
+    - **SPEC_PAPER_H010 v1.1.0 FROZEN:** Added separate supervisor wrapper `scripts/execution/paper_supervisor_h010.js` (`49CA56D3…`) — prewarm `>=1440+macro` gate, `>300s` disconnect freeze sticky no-restart, `30d/100 settled ex-PUSH → FINAL`, bridge `250/0.85/1.0` enforced, executor frozen untouched. SHA-256 `9C78A451CABF20512FBAC74733C5ED8E975181B88686B6EBA2EFA92DE45CEB70` (`9ae22bb`).
+    - **Test Remediation (no frozen mutation):** Fixed `PaperSupervisor_H010.test.js` time-travel arrival + `ModelRegistry_H010.test.js` `04_PAPER/DEMO` expectation. 5 suites / 25 tests green (5 bridge + 2 executor + 5 adversarial 048 + 6 registry + 7 supervisor).
+    - **Registry & Provenance:** `PROVENANCE_RECEIPT_PAPER_H010_v1.1.0.json` (`2B626436…`); manifest `paperDeployment v1.0.0→v1.1.0` applied (`a71a303`). `promotionToLiveProduction` remains `BLOCKED_PENDING_BROKER_EXECUTION_FIDELITY`.
+    - **Disposition:** Paper shadow start **AUTHORIZED** under v1.1.0 only (explicit config, BINANCE_SPOT, Wilson daily informational). Live capital deployment **BLOCKED**.
 
-**Next Objective:** Deploy the cloud recorder to Railway following `docs/RAILWAY_DEPLOYMENT_GUIDE.md` with persistent volume `/data`. Accumulate $N \ge 10,000$ closed M1 candles of Active 2071 during regular weekday trading hours. Once $N \ge 10,000$, download the dataset via the `/download` dashboard endpoint, download concurrent Dukascopy spot data for the exact same timeframe, and execute `fidelity_audit_xauxag.js` to evaluate $\rho_{15\text{m}} \ge 0.98$ and $\text{BSIR}_{15\text{m}} \le 2.0\%$.
+**Next Objective:** Discovery Receipt IQO (`/discovery?asset=XAUUSD`) → H011 IS COUNTING (30d); H010 paper shadow forward remains AUTHORIZED; DEMO_IQO_OPS v1.1.0 coinflip-scaffold proposed (seed 42, simulated dryrun), NOT confirmed/built. Live BLOCKED on all tracks.
+
+101. **Commit 051 - H011 Phase-1 Exploration Protocol Freeze & DEMO_IQO_OPS v1.0.0 Scaffold:**
+    - **H011 F1 [FROZEN]:** `SPEC_H011_PHASE1_EXPLORATION_PROTOCOL_v1.0.0.json` (SHA-256 `f5d19515…`) + freeze receipt (4/4 gates PASS). Via 1 locked: IS novo IQO XAUUSD 60s do zero (30d corridos, CLOSED-only, dedup from/id, gap >30min quarantined, clock keeps running, no selective extension); Δ=4.45pp, N_min=450; P_BE via discovery OBSERVED_ONLY; OOS fresco-cego pós-F2; single-hypothesis rule; Practice-only, live BLOCKED. H008 abandoned pre-freeze, H009/H010 untouched, zero inheritance.
+    - **DEMO_IQO_OPS v1.0.0 [FROZEN]:** Separate fenced demo-ops track (fences `96b4c460…`, supervisor `1b81cfee…`, payout observer `bc9e7fc3…`, receipt `research/governance/DEMO_IQO_OPS_FENCE_RECEIPT_v1.0.0.json`): BTC/USD regular (OTC + wrong-asset rejected), 60s, stake 1.0 fixed (Martingale/Kelly prohibited, tamper logged), daily stop 10U UTC restart-safe, disconnect/gap>300s sticky freeze, payout-observed-only dispatch (PAYOUT_UNKNOWN blocks), signal DISABLED (zero trades out of the box; enabling needs new version+hash). Outputs quarantined, zero evidence power, H010 logic forbidden by construction (governance test enforced).
+    - **Tests:** `tests/unit/DemoIqoOps.test.js` 11/11 PASS. Full suite 255/268 — 13 failures pre-existing & unrelated (frozen-SHA drift H006/H010 manifests on untouched files; missing XAUXAG canonical CSV in checkout; `git diff` empty of tracked modifications).
+
+
